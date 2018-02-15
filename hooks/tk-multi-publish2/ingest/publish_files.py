@@ -312,6 +312,11 @@ class PublishFilesPlugin(HookBaseClass):
 
         publisher = self.parent
 
+        # from dd.runtime import api
+        # api.load("ipython")
+        # from IPython import embed
+        # embed()
+
         # ---- ensure that work file(s) exist on disk to be published
 
         if item.properties["is_sequence"]:

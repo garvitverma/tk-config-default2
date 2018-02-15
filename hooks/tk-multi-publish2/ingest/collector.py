@@ -725,6 +725,9 @@ class FileCollectorPlugin(HookBaseClass):
                 fields["name"] = name_field
                 fields["Step"] = name_field
 
+                # ---- Populate asset based keys in the item
+                fields["sg_asset_type"] = name_field
+
             # Else attempt to use a santized task name
             # elif item.context.task:
             #     name_field = item.context.task["name"]
@@ -736,6 +739,9 @@ class FileCollectorPlugin(HookBaseClass):
             if name_field:
                 fields["output"] = output_field
 
+                # ---- Populate asset based keys in the item
+                fields["Asset"] = output_field
+                
         if "Sequence" not in fields:
             # First attempt to get it from the parent item
             sequence_field = self._get_sequence_field_r(item.parent)
