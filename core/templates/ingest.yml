@@ -1,5 +1,14 @@
 keys:
     # examples for name_converter hook!
+    ingest_img_extension:
+        type: str
+        choices:
+            exr: EXR
+            dpx: DPX
+            jpg: JPEG
+        default: exr
+        alias: extension
+
     client_output:
         type: str
         filter_by: alphanumeric
@@ -13,14 +22,14 @@ keys:
               overlay: "_overlay"
               cam: "camera"
 
-    client_sequence:
+    ingestSequence:
         type: str
         shotgun_entity_type: Sequence
-        shotgun_field_name: code
+        shotgun_field_name: sg_client_name
         filter_by: alphanumeric
         value_from_str_hook: 'name_converter'
         edit_types:
-          - lower_case
+          - upper_case
 
     client_step:
         type: str
@@ -31,6 +40,10 @@ keys:
         edit_types:
           - upper_case
 
+    subdirectories_folder_path:
+        type: str
+        filter_by: '^([A-Za-z0-9_.\-]+)\/([A-Za-z0-9_.\-]+)\/([A-Za-z0-9_.\-]+)\/([A-Za-z0-9_.\-]+)$'
+
     client_name:
         type: str
         filter_by: '^[a-zA-Z](\w+)?[a-zA-Z0-9]$'
@@ -40,10 +53,11 @@ keys:
 
 paths:
 
-    # sample template for name_converter
-    client_shot_publish_cache:              './{client_sequence}/{Shot}/SHARED/ANIM/{client_step}/@client_shot_version_name.abc'
+    ingest_folder:                          './REF/CLIENT_VAULT/incoming'
+
+    ingest_folder_path:                     '@ingest_folder/{subdirectories_folder_path}'
+    ingest_shot_render:                     '@ingest_folder_path/@ingest_shot_version_name.{SEQ}.{ingest_img_extension}'
 
 strings:
 
-    # sample string for name_converter
-    client_shot_version_name:               '{client_sequence}_{Shot}_{client_step}_{client_name}[-{client_output}].v{version}'
+    ingest_shot_version_name:               '{ingestSequence}{Shot}_{Step}_{name}[-{output}]_v{version}'

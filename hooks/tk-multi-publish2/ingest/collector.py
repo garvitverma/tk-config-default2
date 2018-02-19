@@ -26,182 +26,36 @@ HookBaseClass = sgtk.get_hook_baseclass()
 
 print "HELLO CONFIG RUNNING!"
 
-
-# This is a dictionary of file type info that allows the basic collector to
-# identify common production file types and associate them with a display name,
-# item type, and config icon.
-DEFAULT_ITEM_TYPES = {
-    "file.alembic": {
-        "extensions": ["abc"],
-        "icon": "{self}/hooks/icons/alembic.png",
-        "type_display": "Alembic Cache"
-    },
-    "file.3dsmax": {
-        "extensions": ["max"],
-        "icon": "{self}/hooks/icons/3dsmax.png",
-        "type_display": "3dsmax Scene"
-    },
-    "file.nukestudio": {
-        "extensions": ["hrox"],
-        "icon": "{self}/hooks/icons/nukestudio.png",
-        "type_display": "NukeStudio Project"
-    },
-    "file.houdini": {
-        "extensions": ["hip", "hipnc"],
-        "icon": "{self}/hooks/icons/houdini.png",
-        "type_display": "Houdini Scene"
-    },
-    "file.maya": {
-        "extensions": ["ma", "mb"],
-        "icon": "{self}/hooks/icons/maya.png",
-        "type_display": "Maya Scene"
-    },
-    "file.motionbuilder": {
-        "extensions": ["fbx"],
-        "icon": "{self}/hooks/icons/motionbuilder.png",
-        "type_display": "Motion Builder FBX"
-    },
-    "file.nuke": {
-        "extensions": ["nk"],
-        "icon": "{self}/hooks/icons/nuke.png",
-        "type_display": "Nuke Script"
-    },
-    "file.photoshop": {
-        "extensions": ["psd", "psb"],
-        "icon": "{self}/hooks/icons/photoshop.png",
-        "type_display": "Photoshop Image"
-    },
-    "file.render": {
-        "extensions": ["dpx", "exr"],
-        "icon": "{self}/hooks/icons/image.png",
-        "type_display": "Rendered Image"
-    },
-    "file.texture": {
-        "extensions": ["tif", "tiff", "tx", "tga", "dds", "rat"],
-        "icon": "{self}/hooks/icons/texture.png",
-        "type_display": "Texture Image"
-    },
-    "file.image": {
-        "extensions": ["jpeg", "jpg", "png"],
-        "icon": "{self}/hooks/icons/image.png",
-        "type_display": "Image"
-    },
-    "file.video": {
-        "extensions": ["mov", "mp4"],
-        "icon": "{self}/hooks/icons/video.png",
-        "type_display": "Movie"
-    }
-}
-
-
-class FileCollectorPlugin(HookBaseClass):
+class IngestCollectorPlugin(HookBaseClass):
     """
-    A basic collector that handles files and general objects.
-
-    This collector hook is used to collect individual files that are browsed or
-    dragged and dropped into the Publish2 UI. It can also be subclassed by other
-    collectors responsible for creating items for a file to be published such as
-    the current Maya session file.
-
-    This plugin centralizes the logic for collecting a file, including
-    determining how to display the file for publishing (based on the file
-    extension).
-
-    In addition to creating an item to publish, this hook will set the following
-    properties on the item::
-
-        path - The path to the file to publish. This could be a path
-            representing a sequence of files (including a frame specifier).
-
-        sequence_paths - If the item represents a collection of files, the
-            plugin will populate this property with a list of files matching
-            "path".
-
+    Collector that operates on the current set of ingestion files. Should
+    inherit from the basic collector hook.
     """
 
-    @property
-    def settings_schema(self):
+    def _add_file_item(self, parent_item, path, is_sequence=False, seq_files=None):
         """
-        Dictionary defining the settings that this collector expects to receive
-        through the settings parameter in the process_current_session and
-        process_file methods.
-
-        A dictionary on the following form::
-
-            {
-                "Settings Name": {
-                    "type": "settings_type",
-                    "default_value": "default_value",
-                    "description": "One line description of the setting"
-            }
-
-        The type string should be one of the data types that toolkit accepts as
-        part of its environment configuration.
+        Creates a file item
         """
-        schema = super(FileCollectorPlugin, self).settings_schema
-        schema["Item Types"]["default_value"] = DEFAULT_ITEM_TYPES
-        schema["Item Types"]["values"]["items"] = {
-            "extensions": {
-                "type": "list",
-                "values": {
-                    "type": "str",
-                    "description": "A string pattern to match a file extension."
-                },
-                "description": "A list of file extensions that this item type is interested in."
-            },
-            "icon": {
-                "type": "config_path",
-                "description": ""
-            },
-            "type_display": {
-                "type": "str",
-                "description": ""
-            },
-            "work_path_template": {
-                "type": "template",
-                "description": "",
-                "fields": ["context", "*"],
-                "allows_empty": True,
-            },
-        }
-        schema["Item Types"]["description"] = (
-            "Dictionary of file type info that allows the basic "
-            "collector to identify common production file types and "
-            "associate them with a display name, item type, and config "
-            "icon."
-        )
-        return schema
+        publisher = self.parent
 
-    def process_current_session(self, parent_item):
-        """
-        Analyzes the current scene open in a DCC and parents a subtree of items
-        under the parent_item passed in.
+        # get the file item from base class
+        file_item = super(IngestCollectorPlugin, self)._add_file_item(parent_item, path, is_sequence, seq_files)
 
-        :param parent_item: Root item instance
-        """
-        # default implementation does not do anything
-        return []
+        converter = NameConverter()
+        nc_template = converter.get_template_by_name("element_ingest_template")
+        seq_path = publisher.util.get_path_for_frame(file_item.properties["path"], 1001)
+        tokens = nc_template.get_tokens( os.path.split(seq_path)[1] )
+        parent_item.properties["fields"] = tokens
 
+        # resolve the {ENV} variable in work_path_template
+        work_path_template = file_item.properties["work_path_template"]
+        work_path_template = work_path_template.replace("{ENV}", self._resolve_env(file_item))
 
-    def process_file(self, parent_item, path):
-        """
-        Analyzes the given file and creates one or more items
-        to represent it.
+        # reassign the work_path_template property, after resolution of {ENV}
+        if work_path_template:
+            file_item.properties["work_path_template"] = work_path_template
 
-        :param parent_item: Root item instance
-        :param path: Path to analyze
-
-        :returns: The main item that was created, or None if no item was created
-            for the supplied path
-        """
-
-        # handle files and folders differently
-        if os.path.isdir(path):
-            return self._collect_folder(parent_item, path)
-        else:
-            item = self._collect_file(parent_item, path)
-            return [item] if item else []
-
+        return file_item
 
     def on_context_changed(self, item):
         """
@@ -212,193 +66,51 @@ class FileCollectorPlugin(HookBaseClass):
         # Set the item's fields property
         item.properties["fields"] = self._resolve_item_fields(item)
 
+        self._build_new_context(item)
 
-    def _collect_file(self, parent_item, path):
-        """
-        Process the supplied file path.
-
-        :param parent_item: parent item instance
-        :param path: Path to analyze
-        :param frame_sequence: Treat the path as a part of a sequence
-        :returns: The item that was created
+    def _build_new_context(self, item):
+        """Updates the context of the item from the work_path_template, if needed.
+        
+        :param item: item from publisher.
         """
         publisher = self.parent
+        if "fields" in item.properties:
+            fields = item.properties["fields"]
+            # we are using work_path_template in ingestion to spoof the path it's supposed to be published at
+            # this path will then be used to resolve the new context.
+            work_path_template = item.properties.get("work_path_template")
+            if work_path_template:
+                work_tmpl = publisher.get_template_by_name(work_path_template)
+                if not work_tmpl:
+                    # this template was not found in the template config!
+                    raise TankError("The template '%s' does not exist!" % work_path_template)
 
-        # make sure the path is normalized. no trailing separator, separators
-        # are appropriate for the current os, no double separators, etc.
-        path = sgtk.util.ShotgunPath.normalize(path)
+            # once all the fields are set, construct a dummy work path
+            # this path will help us re-construct the context!
+            work_path = work_tmpl.apply_fields(fields)
+            new_context = self.tank.context_from_path(work_path)
 
-        # Check to see if the input path contains a frame_spec
-        frame_path = publisher.util.get_path_for_frame(path, 1001)
-        if frame_path:
-            # If so, set the seq_path equal to input path
-            seq_path = path
-        else:
-            # Else check if the input path contains a frame number
-            seq_path = publisher.util.get_frame_sequence_path(path)
+            from dd.runtime import api
+            api.load("ipython")
+            from IPython import embed
+            embed()
 
-        seq_files = []
-        is_sequence = False
-        if seq_path:
+            if item.context.entity:
+                # if the previous context is not same as new context
+                if not (item.context.entity["type"] == new_context.entity["type"] \
+                    and item.context.entity["name"] == new_context.entity["name"]):
+                        item.context = new_context
+                        print "Old Context: ", item.context
+                        print "Setting new Context: ", new_context
+            # publisher launched from project context
+            elif item.context.project:
+                # if there is an entity in new_context, udpate it.
+                # if there is still no entity, that means we are publishing it to project.
+                if new_context.entity:
+                    item.context = new_context
+                    print "Old Context: ", item.context
+                    print "Setting new Context: ", new_context
 
-            # find files that match the pattern
-            seq_pattern = publisher.util.get_path_for_frame(seq_path, "*")
-            seq_files = [f for f in glob.iglob(seq_pattern) if os.path.isfile(f)]
-
-            # Sort the resulting list
-            seq_files.sort()
-
-            # Set path to seq_path
-            path = seq_path
-            is_sequence = True
-
-        display_name = publisher.util.get_publish_name(path)
-
-        # Make sure file(s) exist on disk
-        if is_sequence:
-            if not seq_files:
-                self.logger.warning(
-                    "File sequence does not exist for item: '%s'. Skipping" % display_name,
-                    extra={
-                        "action_show_more_info": {
-                            "label": "Show Info",
-                            "tooltip": "Show more info",
-                            "text": "Path does not exist: %s" % (path,)
-                        }
-                    }
-                )
-                return
-        else:
-            if not os.path.exists(path):
-                self.logger.warning(
-                    "File does not exist for item: '%s'. Skipping" % display_name,
-                    extra={
-                        "action_show_more_info": {
-                            "label": "Show Info",
-                            "tooltip": "Show more info",
-                            "text": "Path does not exist: %s" % (path,)
-                        }
-                    }
-                )
-                return
-
-        return self._add_file_item(parent_item, path, is_sequence, seq_files)
-
-
-    def _collect_folder(self, parent_item, folder):
-        """
-        Process the supplied folder path.
-
-        :param parent_item: parent item instance
-        :param folder: Path to analyze
-        :returns: The item that was created
-        """
-
-        # make sure the path is normalized. no trailing separator, separators
-        # are appropriate for the current os, no double separators, etc.
-
-        folder = sgtk.util.ShotgunPath.normalize(folder)
-
-        publisher = self.parent
-        frame_sequences = publisher.util.get_frame_sequences(folder, SEQ_EXTENSIONS_LIST)
-
-        file_items = []
-        for path, seq_files in frame_sequences:
-            file_items += filter(None, [self._add_file_item(parent_item, path, True, seq_files)])
-
-        if not file_items:
-            self.logger.warning("No file sequences found in: %s" % (folder,))
-
-        return file_items
-
-
-    def _add_file_item(self, parent_item, path, is_sequence=False, seq_files=None):
-        """
-        Creates a file item
-        """
-        publisher = self.parent
-
-        # get info for the extension
-        item_info = self._get_item_info(path, is_sequence)
-
-        icon_path = item_info["icon_path"]
-        item_type = item_info["item_type"]
-        type_display = item_info["type_display"]
-        work_path_template = item_info["work_path_template"]
-
-        display_name = publisher.util.get_publish_name(path)
-
-        # create and populate the item
-        file_item = parent_item.create_item(
-            item_type,
-            type_display,
-            display_name,
-            self
-        )
-
-        # Set the icon path
-        file_item.set_icon_from_path(icon_path)
-
-        # if the supplied path is an image, use the path as the thumbnail.
-        if (item_type.startswith("file.image") or
-            item_type.startswith("file.texture") or
-            item_type.startswith("file.render")):
-
-            if is_sequence:
-                file_item.set_thumbnail_from_path(seq_files[0])
-            else:
-                file_item.set_thumbnail_from_path(path)
-
-            # disable thumbnail creation since we get it for free
-            file_item.thumbnail_enabled = False
-
-        # all we know about the file is its path. set the path in its
-        # properties for the plugins to use for processing.
-        file_item.properties["path"] = path
-
-        file_item.properties["is_sequence"] = is_sequence
-        if is_sequence:
-            # include an indicator that this is an image sequence and the known
-            # file that belongs to this sequence
-            file_item.properties["sequence_paths"] = seq_files
-            file_info = (
-                "The following files were collected:<br>"
-                "<pre>%s</pre>" % (pprint.pformat(seq_files),)
-            )
-        else:
-            file_info = (
-                "The following file was collected:<br>"
-                "<pre>%s</pre>" % (path,)
-            )
-
-        converter = NameConverter()
-        nc_template = converter.get_template_by_name("element_ingest_template")
-        seq_path = publisher.util.get_path_for_frame(file_item.properties["path"], 1001)
-        tokens = nc_template.get_tokens( os.path.split(seq_path)[1] )
-        parent_item.properties["fields"] = tokens
-
-        work_path_template = work_path_template.replace("{ENV}", self._resolve_env(file_item))
-
-        # If defined, add the work_path_template to the item's properties
-        if work_path_template:
-            file_item.properties["work_path_template"] = work_path_template
-
-        # Set the item's fields property
-        # this is being done by context changed
-        # file_item.properties["fields"] = self._resolve_item_fields(file_item)
-
-        self.logger.info(
-            "Collected item: %s" % display_name,
-            extra={
-                "action_show_more_info": {
-                    "label": "Show File(s)",
-                    "tooltip": "Show the collected file(s)",
-                    "text": file_info
-                }
-            }
-        )
-
-        return file_item
 
     def _resolve_env(self, item):
         """Returns the env name that's resolved for the given item.
@@ -421,134 +133,6 @@ class FileCollectorPlugin(HookBaseClass):
         if "dd_show" in dd_fields:
             if dd_fields["dd_show"]:
                 return 'project'
-
-    def _get_item_info(self, path, is_sequence):
-        """
-        Return a tuple of display name, item type, and icon path for the given
-        filename.
-
-        The method will try to identify the file as a common file type. If not,
-        it will use the mimetype category. If the file still cannot be
-        identified, it will fallback to a generic file type.
-
-        :param path: The file path to identify type info for
-
-        :return: A dictionary of information about the item to create::
-
-            # path = "/path/to/some/file.0001.exr"
-
-            {
-                "item_type": "file.image.sequence",
-                "type_display": "Rendered Image Sequence",
-                "icon_path": "/path/to/some/icons/folder/image_sequence.png",
-            }
-
-        The item type will be of the form `file.<type>` where type is a specific
-        common type or a generic classification of the file.
-        """
-        publisher = self.parent
-
-        # extract the components of the supplied path
-        file_info = publisher.util.get_file_path_components(path)
-        extension = file_info["extension"]
-        filename = file_info["filename"]
-
-        # default values used if no specific type can be determined
-        type_display = "File"
-        item_type = "file.unknown"
-        work_path_template = None
-        default_icon = "{self}/hooks/icons/file.png"
-
-        # keep track if a common type was identified for the extension
-        common_type_found = False
-
-        # look for the extension in the common file type info dict
-        for item_type, type_info in self.settings["Item Types"].value.iteritems():
-
-            if extension in type_info["extensions"]:
-                # found the extension in the common types lookup. extract the
-                # type_display, icon path, and optional work_path_template.
-                type_display = type_info["type_display"]
-                icon_path = type_info["icon"]
-                work_path_template = type_info.get("work_path_template")
-                common_type_found = True
-                
-                # If we are dealing with a sequence, first check if we have a
-                # separate definition for a sequence of this type specifically,
-                # and if so, use that instead.
-                if is_sequence and not item_type.endswith(".sequence"):
-                    tmp_type = "%s.%s" % (item_type, "sequence")
-                    if tmp_type in self.settings["Item Types"].value:
-                        continue
-
-                # Otherwise, we've found our match
-                break
-
-        if not common_type_found:
-            # no common type match. try to use the mimetype category. this will
-            # be a value like "image/jpeg" or "video/mp4". we'll extract the
-            # portion before the "/" and use that for display.
-            (category_type, _) = mimetypes.guess_type(filename)
-
-            if category_type:
-
-                # mimetypes.guess_type can return unicode strings depending on
-                # the system's default encoding. If a unicode string is
-                # returned, we simply ensure it's utf-8 encoded to avoid issues
-                # with toolkit, which expects utf-8
-                if isinstance(category_type, unicode):
-                    category_type = category_type.encode("utf-8")
-
-                # the category portion of the mimetype
-                category = category_type.split("/")[0]
-
-                type_display = "%s File" % (category.title(),)
-                item_type = "file.%s" % (category,)
-                icon_path = "{self}/hooks/icons/%s.png" % (category,)
-
-        # construct a full path to the icon given the name defined above
-        icon_path = publisher.expand_path(icon_path)
-        if not os.path.exists(icon_path):
-            icon_path = publisher.expand_path(default_icon)
-
-        if is_sequence:
-            # if the supplied image path is part of a sequence. alter the
-            # type info to account for this.
-            type_display = "%s Sequence" % (type_display,)
-            if not item_type.endswith(".sequence"):
-                item_type = "%s.%s" % (item_type, "sequence")
-            icon_path = "{self}/hooks/icons/image_sequence.png"
-
-        # everything should be populated. return the dictionary
-        return dict(
-            icon_path=icon_path,
-            item_type=item_type,
-            type_display=type_display,
-            work_path_template=work_path_template
-        )
-
-
-    def _get_version_number_r(self, item):
-        """
-        Recurse up item hierarchy to determine version number
-        """
-        publisher = self.parent
-        path = item.properties.get("path")
-
-        if not path:
-            if not item.is_root():
-                version = self._get_version_number_r(item.parent)
-            else:
-                version = 1
-        else:
-            version = publisher.util.get_version_number(path)
-            if not version:
-                if not item.is_root():
-                    version = self._get_version_number_r(item.parent)
-                else:
-                    version = 1
-        return version
-
 
     def _get_name_field_r(self, item):
         """
@@ -612,126 +196,20 @@ class FileCollectorPlugin(HookBaseClass):
         Intended to be overridden by DCC-specific subclasses.
         """
         publisher = self.parent
-        if item.properties["is_sequence"]:
-            path = item.properties["sequence_paths"][0]
-        else:
-            path = item.properties["path"]
 
-        fields = {}
+        fields = super(IngestCollectorPlugin, self)._resolve_item_fields(item)
 
-        # First check if a work_path_template has been defined
-        work_path_template = item.properties.get("work_path_template")
-        if work_path_template:
-            work_tmpl = publisher.get_template_by_name(work_path_template)
-            print "PICKING FROM WORK PATH TEMPLATE: ", work_tmpl
-            if not work_tmpl:
-                # this template was not found in the template config!
-                raise TankError("The template '%s' does not exist!" % work_path_template)
+        print "Fields from templ: ", fields
 
-        # Else see if the path matches an existing template
-        else:
-            # Note that this needs to happen after the context has been set
-            work_tmpl = self.sgtk.template_from_path(path)
-            if not work_tmpl:
-                self.logger.warning(
-                    "Cannot find a matching template for item: %s" % (item.name)
-                )
+        # override name field, even if  it is defined
+        # First attempt to get it from the parent item
+        name_field = self._get_name_field_r(item.parent)
+        if name_field:
+            fields["name"] = name_field
+            fields["Step"] = name_field
 
-        # If there is a work template, first attempt to get fields from parsing the path
-        if work_tmpl:
-            tmpl_fields = work_tmpl.validate_and_get_fields(path)
-            if tmpl_fields:
-                self.logger.info(
-                    "Parsed path using template '%s' for item: %s" % (work_tmpl.name, item.name),
-                    extra={
-                        "action_show_more_info": {
-                            "label": "Show Info",
-                            "tooltip": "Show more info",
-                            "text": "Path parsed by template '%s': %s\nResulting fields:\n%s" %
-                            (work_path_template, path, pprint.pformat(tmpl_fields))
-                        }
-                    }
-                )
-                fields.update(tmpl_fields)
-            else:
-                self.logger.warning(
-                    "Path does not match template for item: %s" % (item.name),
-                    extra={
-                        "action_show_more_info": {
-                            "label": "Show Info",
-                            "tooltip": "Show more info",
-                            "text": "Path cannot be parsed by template '%s': %s" %
-                            (work_path_template, path)
-                        }
-                    }
-                )
-
-        print "FIELDS BEFORE OIIO: ", fields
-
-        # If not already populated, first attempt to get the width and height
-        if "width" not in fields or "height" not in fields:
-            # If image, use OIIO to introspect file and get WxH
-            try:
-                from OpenImageIO import ImageInput
-                fh = ImageInput.open(str(path))
-                if fh:
-                    try:
-                        spec = fh.spec()
-                        fields["width"] = spec.width
-                        fields["height"] = spec.height
-                    except Exception as e:
-                        self.logger.error(
-                            "Error getting resolution for item: %s" % (item.name,),
-                            extra={
-                                "action_show_more_info": {
-                                    "label": "Show Info",
-                                    "tooltip": "Show more info",
-                                    "text": "Error reading file: %s\n  ==> %s" % (path, str(e))
-                                }
-                            }
-                        )
-                    finally:
-                        fh.close()
-            except ImportError as e:
-                self.logger.error(str(e))
-
-        # If item has version in file name, use it, otherwise, recurse up item hierarchy
-        # Note: this intentionally overwrites any value found in the work file
-        fields["version"] = self._get_version_number_r(item)
-
-        # Get the file extension if not already defined
-        if "extension" not in fields:
-            file_info = publisher.util.get_file_path_components(path)
-            fields["extension"] = file_info["extension"]
-
-        # Force use of %d format
-        if item.properties["is_sequence"]:
-            fields["SEQ"] = "FORMAT: %d"
-
-        # use %V - full view printout as default for the eye field
-        fields["eye"] = "%V"
-
-        # add in date values for YYYY, MM, DD
-        today = datetime.date.today()
-        fields["YYYY"] = today.year
-        fields["MM"] = today.month
-        fields["DD"] = today.day
-
-        # Try to set the name field if not defined
-        if "name" not in fields:
-            # First attempt to get it from the parent item
-            name_field = self._get_name_field_r(item.parent)
-            if name_field:
-                fields["name"] = name_field
-                fields["Step"] = name_field
-
-                # ---- Populate asset based keys in the item
-                fields["sg_asset_type"] = name_field
-
-            # Else attempt to use a santized task name
-            # elif item.context.task:
-            #     name_field = item.context.task["name"]
-            #     fields["name"] = urllib.quote(name_field.replace(" ", "_").lower(), safe='')
+            # ---- Populate asset based keys in the item
+            fields["sg_asset_type"] = name_field
 
         if "output" not in fields:
             # First attempt to get it from the parent item
@@ -754,44 +232,8 @@ class FileCollectorPlugin(HookBaseClass):
             if shot_field:
                 fields["Shot"] = shot_field
 
-        print "FIELDS AFTER OIIO: ", fields
-
-        print "Old Context: ", item.context
-        # once all the fields are set, construct a dummy work path
-        # this path will help us re-construct the context!
-        work_path = work_tmpl.apply_fields(fields)
-        new_context = self.tank.context_from_path(work_path)
-
-        if item.context.entity:
-            # if the context shot is not same as fields Shot
-            if item.context.entity["name"] != fields["Shot"]:
-                item.context = new_context
-                print "New Context: ", new_context
-
-        # from dd.runtime import api
-        # api.load("ipython")
-        # from IPython import embed
-        # embed()
+        print "FIELDS: ", fields        
 
         item.description = "Element ingest: {0} contains {1}".format(name_field, output_field)
 
         return fields
-
-def _build_seq_extensions_list():
-
-    file_types = ["file.photoshop", "file.render", "file.texture", "file.image"]
-    extensions = set()
-
-    for file_type in file_types:
-        extensions.update(DEFAULT_ITEM_TYPES[file_type]["extensions"])
-
-    # get all the image mime type extensions as well
-    mimetypes.init()
-    types_map = mimetypes.types_map
-    for (ext, mimetype) in types_map.iteritems():
-        if mimetype.startswith("image/"):
-            extensions.add(ext.lstrip("."))
-
-    return list(extensions)
-
-SEQ_EXTENSIONS_LIST = _build_seq_extensions_list()
