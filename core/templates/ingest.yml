@@ -1,6 +1,5 @@
 keys:
-    # examples for name_converter hook!
-    ingest_img_extension:
+    ingestImgExtension:
         type: str
         choices:
             exr: EXR
@@ -9,55 +8,105 @@ keys:
         default: exr
         alias: extension
 
-    client_output:
-        type: str
-        filter_by: alphanumeric
-        value_from_str_hook: 'name_converter'
-        edit_types:
-          - replace
-        edits:
-            replace:
-              main: ""
-              grey: "_grey"
-              overlay: "_overlay"
-              cam: "camera"
-
     ingestSequence:
         type: str
         shotgun_entity_type: Sequence
         shotgun_field_name: sg_client_name
-        filter_by: alphanumeric
+        filter_by: '^([A-Za-z]{3})$'
         value_from_str_hook: 'name_converter'
         edit_types:
           - upper_case
 
-    client_step:
+    ingestShot:
+        type: str
+        shotgun_entity_type: Shot
+        shotgun_field_name: code
+        filter_by: '^([0-9]{5,})$'
+        value_from_str_hook: 'name_converter'
+        edit_types:
+          - pad
+        edits:
+          pad:
+            value: 6
+
+    ingestStep:
         type: str
         shotgun_entity_type: Step
         shotgun_field_name: short_name
-        filter_by: alphanumeric
-        value_from_str_hook: 'name_converter'
-        edit_types:
-          - upper_case
+        filter_by: '^([A-Za-z]+)$'
 
-    subdirectories_folder_path:
-        type: str
-        filter_by: '^([A-Za-z0-9_.\-]+)\/([A-Za-z0-9_.\-]+)\/([A-Za-z0-9_.\-]+)\/([A-Za-z0-9_.\-]+)$'
+    ingestVersion:
+        type: int
+        format_spec: '02'
 
-    client_name:
-        type: str
-        filter_by: '^[a-zA-Z](\w+)?[a-zA-Z0-9]$'
-        value_from_str_hook: 'name_converter'
-        edit_types:
-          - underscore_to_camelcase
+    # ================================= #
+    # examples for name_converter hook! #
+    # ================================= #
+    #    client_output:
+    #        type: str
+    #        filter_by: alphanumeric
+    #        value_from_str_hook: 'name_converter'
+    #        edit_types:
+    #          - replace
+    #        edits:
+    #            replace:
+    #              main: ""
+    #              grey: "_grey"
+    #              overlay: "_overlay"
+    #              cam: "camera"
+    #
+    #    client_step:
+    #        type: str
+    #        shotgun_entity_type: Step
+    #        shotgun_field_name: short_name
+    #        filter_by: alphanumeric
+    #        value_from_str_hook: 'name_converter'
+    #        edit_types:
+    #          - upper_case
+    #
+    #    client_name:
+    #        type: str
+    #        filter_by: '^[a-zA-Z](\w+)?[a-zA-Z0-9]$'
+    #        value_from_str_hook: 'name_converter'
+    #        edit_types:
+    #          - underscore_to_camelcase
+    # ================================= #
+    # examples for name_converter hook! #
+    # ================================= #
 
 paths:
 
     ingest_folder:                          './REF/CLIENT_VAULT/incoming'
 
-    ingest_folder_path:                     '@ingest_folder/{subdirectories_folder_path}'
-    ingest_shot_render:                     '@ingest_folder_path/@ingest_shot_version_name.{SEQ}.{ingest_img_extension}'
-
 strings:
 
-    ingest_shot_version_name:               '{ingestSequence}{Shot}_{Step}_{name}[-{output}]_v{version}'
+    # strings for file names
+    ingest_shot_version_name:               '{ingestSequence}0{ingestShot}_{ingestStep}_{name}[-{output}]_v{ingestVersion}'
+    ingest_sequence_version_name:           '{ingestSequence}_{ingestStep}_{name}[-{output}]_v{ingestVersion}'
+    ingest_project_version_name:            '{ingestStep}_{name}[-{output}]_v{ingestVersion}'
+
+    # strings for publish names
+    ingest_shot_publish_name:               '{Sequence}_{Shot}_{Step}_{name}[-{output}]'
+    ingest_sequence_publish_name:           '{Sequence}_{Step}_{name}[-{output}]'
+    ingest_project_publish_name:            '{Step}_{name}[-{output}]'
+
+    # templates for parsing files
+    ingest_shot_render:                     '@ingest_shot_version_name.{SEQ}.{ingestImgExtension}'
+    ingest_sequence_render:                 '@ingest_sequence_version_name.{SEQ}.{ingestImgExtension}'
+    ingest_project_render:                  '@ingest_project_version_name.{SEQ}.{ingestImgExtension}'
+
+    ingest_shot_script:                     '@ingest_shot_version_name.nk'
+    ingest_sequence_script:                 '@ingest_sequence_version_name.nk'
+    ingest_project_script:                  '@ingest_project_version_name.nk'
+
+    ingest_shot_scene:                      '@ingest_shot_version_name.{maya_extension}'
+    ingest_sequence_scene:                  '@ingest_sequence_version_name.{maya_extension}'
+    ingest_project_scene:                   '@ingest_project_version_name.{maya_extension}'
+
+    ingest_shot_cache:                      '@ingest_shot_version_name.{geo_extension}'
+    ingest_sequence_cache:                  '@ingest_sequence_version_name.{geo_extension}'
+    ingest_project_cache:                   '@ingest_project_version_name.{geo_extension}'
+
+    ingest_shot_movie:                      '@ingest_shot_version_name.mov'
+    ingest_sequence_movie:                  '@ingest_sequence_version_name.mov'
+    ingest_project_movie:                   '@ingest_project_version_name.mov'
