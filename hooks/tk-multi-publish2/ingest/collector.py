@@ -17,14 +17,10 @@ import urllib
 import sgtk
 from sgtk import TankError
 
-from dd.runtime import api
-api.load("indiapipeline")
-
-from indiapipeline.name_converter import NameConverter
+from tank import context
 
 HookBaseClass = sgtk.get_hook_baseclass()
 
-print "HELLO CONFIG RUNNING!"
 
 class IngestCollectorPlugin(HookBaseClass):
     """
@@ -32,162 +28,118 @@ class IngestCollectorPlugin(HookBaseClass):
     inherit from the basic collector hook.
     """
 
-    def _add_file_item(self, parent_item, path, is_sequence=False, seq_files=None):
+    def _add_file_item(self, settings, parent_item, path, is_sequence=False, seq_files=None):
         """
         Creates a file item
+
+        :param dict settings: Configured settings for this collector
+        :param parent_item: parent item instance
+        :param path: Path to analyze
+        :param is_sequence: Bool as to whether to treat the path as a part of a sequence
+        :param seq_files: A list of files in the sequence
+
+        :returns: The item that was created
         """
         publisher = self.parent
 
-        # get the file item from base class
-        file_item = super(IngestCollectorPlugin, self)._add_file_item(parent_item, path, is_sequence, seq_files)
+        # get info for the extension
+        item_info = self._get_item_info(settings, path, is_sequence)
 
-        converter = NameConverter()
-        nc_template = converter.get_template_by_name("element_ingest_template")
-        seq_path = publisher.util.get_path_for_frame(file_item.properties["path"], 1001)
-        tokens = nc_template.get_tokens( os.path.split(seq_path)[1] )
-        parent_item.properties["fields"] = tokens
+        icon_path = item_info["icon_path"]
+        item_type = item_info["item_type"]
+        type_display = item_info["type_display"]
+        work_path_template = item_info["work_path_template"]
 
-        # resolve the {ENV} variable in work_path_template
-        work_path_template = file_item.properties["work_path_template"]
-        work_path_template = work_path_template.replace("{ENV}", self._resolve_env(file_item))
+        display_name = publisher.util.get_publish_name(path)
 
-        # reassign the work_path_template property, after resolution of {ENV}
+        # Define the item's properties
+        properties = {}
+
+        # set the path and is_sequence properties for the plugins to use
+        properties["path"] = path
+        properties["is_sequence"] = is_sequence
+
+        # If a sequence, add the sequence path
+        if is_sequence:
+            properties["sequence_paths"] = seq_files
+
         if work_path_template:
-            file_item.properties["work_path_template"] = work_path_template
+            properties["work_path_template"] = work_path_template
+
+        # build the context of the item
+        context = self._get_item_context_from_path(properties, os.path.basename(path))
+
+        # create and populate the item
+        file_item = parent_item.create_item(
+            item_type,
+            type_display,
+            display_name,
+            collector=self.plugin,
+            context=context,
+            properties=properties
+        )
+
+        # resolve work_path_template for the item
+        file_item.properties["work_path_template"] = self._resolve_work_path_template(file_item.properties,
+                                                                                      os.path.basename(path))
+
+        # Set the icon path
+        file_item.set_icon_from_path(icon_path)
+
+        # if the supplied path is an image, use the path as the thumbnail.
+        if (item_type.startswith("file.image") or
+            item_type.startswith("file.texture") or
+            item_type.startswith("file.render")):
+
+            if is_sequence:
+                file_item.set_thumbnail_from_path(seq_files[0])
+            else:
+                file_item.set_thumbnail_from_path(path)
+
+            # disable thumbnail creation since we get it for free
+            file_item.thumbnail_enabled = False
+
+        if is_sequence:
+            # include an indicator that this is an image sequence and the known
+            # file that belongs to this sequence
+            file_info = (
+                "The following files were collected:<br>"
+                "<pre>%s</pre>" % (pprint.pformat(seq_files),)
+            )
+        else:
+            file_info = (
+                "The following file was collected:<br>"
+                "<pre>%s</pre>" % (path,)
+            )
+
+        self.logger.info(
+            "Collected item: %s" % display_name,
+            extra={
+                "action_show_more_info": {
+                    "label": "Show File(s)",
+                    "tooltip": "Show the collected file(s)",
+                    "text": file_info
+                }
+            }
+        )
 
         return file_item
 
-    def on_context_changed(self, item):
+    def on_context_changed(self, settings, item):
         """
         Callback to update the item on context changes.
 
+        :param dict settings: Configured settings for this collector
         :param item: The Item instance
         """
+
+        path = item.properties["path"]
+
+        item.properties["work_path_template"] = self._resolve_work_path_template(item.properties,
+                                                                                 os.path.basename(path))
+
         # Set the item's fields property
         item.properties["fields"] = self._resolve_item_fields(item)
-
-        self._build_new_context(item)
-
-    def _build_new_context(self, item):
-        """Updates the context of the item from the work_path_template, if needed.
-        
-        :param item: item from publisher.
-        """
-        publisher = self.parent
-        if "fields" in item.properties:
-            fields = item.properties["fields"]
-            # we are using work_path_template in ingestion to spoof the path it's supposed to be published at
-            # this path will then be used to resolve the new context.
-            work_path_template = item.properties.get("work_path_template")
-            if work_path_template:
-                work_tmpl = publisher.get_template_by_name(work_path_template)
-                if not work_tmpl:
-                    # this template was not found in the template config!
-                    raise TankError("The template '%s' does not exist!" % work_path_template)
-
-            # once all the fields are set, construct a dummy work path
-            # this path will help us re-construct the context!
-            work_path = work_tmpl.apply_fields(fields)
-            new_context = self.tank.context_from_path(work_path)
-
-            from dd.runtime import api
-            api.load("ipython")
-            from IPython import embed
-            embed()
-
-            if item.context.entity:
-                # if the previous context is not same as new context
-                if not (item.context.entity["type"] == new_context.entity["type"] \
-                    and item.context.entity["name"] == new_context.entity["name"]):
-                        item.context = new_context
-                        print "Old Context: ", item.context
-                        print "Setting new Context: ", new_context
-            # publisher launched from project context
-            elif item.context.project:
-                # if there is an entity in new_context, udpate it.
-                # if there is still no entity, that means we are publishing it to project.
-                if new_context.entity:
-                    item.context = new_context
-                    print "Old Context: ", item.context
-                    print "Setting new Context: ", new_context
-
-
-    def _resolve_env(self, item):
-        """Returns the env name that's resolved for the given item.
-        
-        :param item: item from publisher.
-        """
-
-        parent_item = item.parent
-
-        dd_fields = parent_item.properties["fields"]
-
-        if "dd_shot" in dd_fields:
-            if dd_fields["dd_shot"]:
-                return 'shot'
-
-        if "dd_sequence" in dd_fields:
-            if dd_fields["dd_sequence"]:
-                return 'sequence'
-
-        if "dd_show" in dd_fields:
-            if dd_fields["dd_show"]:
-                return 'project'
-
-    def _get_name_field_r(self, item):
-        """
-        Recurse up item hierarchy to determine the name field
-        """
-        if not item:
-            return None
-
-        name_field = item.properties["fields"].get("dd_step")
-        if name_field:
-            return name_field
-
-        elif item.parent:
-            return self._get_workfile_name_field(item.parent)
-
-        return None
-
-    def _get_output_field_r(self, item):
-        """
-        Recurse up item hierarchy to determine the name field
-        """
-        if not item:
-            return None
-
-        output_field = item.properties["fields"].get("dd_output")
-        if output_field:
-            return output_field
-
-        return None
-
-    def _get_sequence_field_r(self, item):
-        """
-        Recurse up item hierarchy to determine the name field
-        """
-        if not item:
-            return None
-
-        sequence_field = item.properties["fields"].get("dd_sequence")
-        if sequence_field:
-            return sequence_field
-
-        return None
-
-    def _get_shot_field_r(self, item):
-        """
-        Recurse up item hierarchy to determine the name field
-        """
-        if not item:
-            return None
-
-        shot_field = item.properties["fields"].get("dd_shot")
-        if shot_field:
-            return shot_field
-
-        return None
 
 
     def _resolve_item_fields(self, item):
@@ -196,44 +148,107 @@ class IngestCollectorPlugin(HookBaseClass):
         Intended to be overridden by DCC-specific subclasses.
         """
         publisher = self.parent
+        if item.properties["is_sequence"]:
+            path = item.properties["sequence_paths"][0]
+        else:
+            path = item.properties["path"]
 
-        fields = super(IngestCollectorPlugin, self)._resolve_item_fields(item)
+        fields = {}
 
-        print "Fields from templ: ", fields
+        # this should be defined and correct by now!
+        # Since we resolve this field too, while context change of the item.
+        work_path_template = item.properties.get("work_path_template")
 
-        # override name field, even if  it is defined
-        # First attempt to get it from the parent item
-        name_field = self._get_name_field_r(item.parent)
-        if name_field:
-            fields["name"] = name_field
-            fields["Step"] = name_field
+        if work_path_template:
+            work_tmpl = publisher.get_template_by_name(work_path_template)
 
-            # ---- Populate asset based keys in the item
-            fields["sg_asset_type"] = name_field
+            tmpl_fields = work_tmpl.validate_and_get_fields(os.path.basename(path))
 
-        if "output" not in fields:
+            if tmpl_fields:
+                self.logger.info(
+                    "Parsed path using template '%s' for item: %s" % (work_tmpl.name, item.name),
+                    extra={
+                        "action_show_more_info": {
+                            "label": "Show Info",
+                            "tooltip": "Show more info",
+                            "text": "Path parsed by template '%s': %s\nResulting fields:\n%s" %
+                            (work_path_template, path, pprint.pformat(tmpl_fields))
+                        }
+                    }
+                )
+                fields.update(tmpl_fields)
+            else:
+                self.logger.warning(
+                    "Path does not match template for item: %s" % (item.name),
+                    extra={
+                        "action_show_more_info": {
+                            "label": "Show Info",
+                            "tooltip": "Show more info",
+                            "text": "Path cannot be parsed by template '%s': %s" %
+                            (work_path_template, path)
+                        }
+                    }
+                )
+
+        # If not already populated, first attempt to get the width and height
+        if "width" not in fields or "height" not in fields:
+            # If image, use OIIO to introspect file and get WxH
+            try:
+                from OpenImageIO import ImageInput
+                fh = ImageInput.open(str(path))
+                if fh:
+                    try:
+                        spec = fh.spec()
+                        fields["width"] = spec.width
+                        fields["height"] = spec.height
+                    except Exception as e:
+                        self.logger.error(
+                            "Error getting resolution for item: %s" % (item.name,),
+                            extra={
+                                "action_show_more_info": {
+                                    "label": "Show Info",
+                                    "tooltip": "Show more info",
+                                    "text": "Error reading file: %s\n  ==> %s" % (path, str(e))
+                                }
+                            }
+                        )
+                    finally:
+                        fh.close()
+            except ImportError as e:
+                self.logger.error(str(e))
+
+        # If item has version in file name, use it, otherwise, recurse up item hierarchy
+        # Note: this intentionally overwrites any value found in the work file
+        fields["version"] = self._get_version_number_r(item)
+
+        # Get the file extension if not already defined
+        if "extension" not in fields:
+            file_info = publisher.util.get_file_path_components(path)
+            fields["extension"] = file_info["extension"]
+
+        # Force use of %d format
+        if item.properties["is_sequence"]:
+            fields["SEQ"] = "FORMAT: %d"
+
+        # use %V - full view printout as default for the eye field
+        fields["eye"] = "%V"
+
+        # add in date values for YYYY, MM, DD
+        today = datetime.date.today()
+        fields["YYYY"] = today.year
+        fields["MM"] = today.month
+        fields["DD"] = today.day
+
+        # Try to set the name field if not defined
+        if "name" not in fields:
             # First attempt to get it from the parent item
-            output_field = self._get_output_field_r(item.parent)
+            name_field = self._get_name_field_r(item.parent)
             if name_field:
-                fields["output"] = output_field
+                fields["name"] = name_field
 
-                # ---- Populate asset based keys in the item
-                fields["Asset"] = output_field
-                
-        if "Sequence" not in fields:
-            # First attempt to get it from the parent item
-            sequence_field = self._get_sequence_field_r(item.parent)
-            if sequence_field:
-                fields["Sequence"] = sequence_field
-
-        if "Shot" not in fields:
-            # First attempt to get it from the parent item
-            shot_field = self._get_shot_field_r(item.parent)
-            if shot_field:
-                fields["Shot"] = shot_field
-
-        print "FIELDS: ", fields        
-
-        item.description = "Element ingest: {0} contains {1}".format(name_field, output_field)
+            # Else attempt to use a santized task name
+            elif item.context.task:
+                name_field = item.context.task["name"]
+                fields["name"] = urllib.quote(name_field.replace(" ", "_").lower(), safe='')
 
         return fields

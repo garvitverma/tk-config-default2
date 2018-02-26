@@ -17,151 +17,15 @@ import traceback
 import sgtk
 from sgtk import TankError
 
+from tank.util.shotgun import get_sg_connection
+
 HookBaseClass = sgtk.get_hook_baseclass()
 
-print "CONFIG! PUBLISH!"
 
-
-DEFAULT_ITEM_TYPE_SETTINGS = {
-    "file.alembic": {
-        "publish_type": "Alembic Cache",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.3dsmax": {
-        "publish_type": "3dsmax Scene",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.nukestudio": {
-        "publish_type": "NukeStudio Project",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.houdini": {
-        "publish_type": "Houdini Scene",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.maya": {
-        "publish_type": "Maya Scene",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.motionbuilder": {
-        "publish_type": "Motion Builder FBX",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.nuke": {
-        "publish_type": "Nuke Script",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.photoshop": {
-        "publish_type": "Photoshop Image",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.render.sequence": {
-        "publish_type": "Rendered Image",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.texture": {
-        "publish_type": "Texture Image",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.image": {
-        "publish_type": "Image",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-    "file.video": {
-        "publish_type": "Movie",
-        "publish_name_template": None,
-        "publish_path_template": None
-    },
-}
-
-class PublishFilesPlugin(HookBaseClass):
+class IngestPublishFilesPlugin(HookBaseClass):
     """
-    Plugin for creating generic publishes in Shotgun.
-
-    This plugin is typically configured to act upon files that are dragged and
-    dropped into the publisher UI. It can also be used as a base class for
-    other file-based publish plugins as it contains standard operations for
-    validating and registering publishes with Shotgun.
-
-    Once attached to a publish item, the plugin will key off of properties that
-    are set on the item. These properties can be set via the collector or
-    by subclasses prior to calling methods on this class.
-
-    The only property that is required for the plugin to operate is the ``path``
-    property. All of the properties and settings understood by the plugin are
-    documented below:
-
-        Item properties
-        -------------
-
-        path - The path to the file to be published.
-
-        sequence_paths - If set, implies the "path" property represents a
-            sequence of files (typically using a frame identifier such as %04d).
-            This property should be a list of files on disk matching the "path".
-
-        is_sequence - A boolean defining whether or not this item is a sequence of files.
-
-        publish_dependencies - A list of files to include as dependencies when
-            registering the publish. If the item's parent has been published,
-            it's path will be appended to this list.
-
-        Task settings
-        -------------------
-
-        publish_type - If set in the plugin settings dictionary, will be
-            supplied to SG as the publish type when registering "path" as a new
-            publish. This is required.
-
-        publish_name_template - If set in the plugin settings dictionary, will be
-            supplied to SG as the publish name when registering the new publish.
-            If not available, will fall back to the ``path_info`` hook logic.
-
-        publish_path_template - If set in the plugin settings dictionary, used to
-            determine where "path" should be copied prior to publishing. If
-            not specified, "path" will be published in place.
-
-    This plugin will also set the following properties on the item which may be 
-    useful for child items.
-
-        publish_type - Shotgun PublishedFile instance type.
-
-        publish_name - Shotgun PublishedFile instance name.
-
-        publish_version - Shotgun PublishedFile instance version.
-
-        publish_path - The location on disk the publish is copied to.
-
-        sg_publish_data - The dictionary of publish information returned from
-            the tk-core register_publish method.
-
+    Inherits from PublishFilesPlugin
     """
-
-    @property
-    def icon(self):
-        """
-        Path to an png icon on disk
-        """
-        # look for icon one level up from this hook's folder in "icons" folder
-        return self.parent.expand_path("{self}/hooks/icons/publish.png")
-
-    @property
-    def name(self):
-        """
-        One line display name describing the plugin
-        """
-        return "Publish File(s)"
 
     @property
     def description(self):
@@ -170,108 +34,12 @@ class PublishFilesPlugin(HookBaseClass):
         contain simple html for formatting.
         """
 
-        loader_url = "https://support.shotgunsoftware.com/hc/en-us/articles/219033078"
+        desc = super(IngestPublishFilesPlugin, self).description
 
-        return """
-        Publishes the file to the specified <b>Publish Path</b> location and
-        creates a <b>PublishedFile</b> entity in Shotgun, which will include a
-        reference to the file's published path on disk. Other users will be able
-        to access the published file via the <b><a href='%s'>Loader</a></b> so
-        long as they have access to the file's location on disk.
-
-        <h3>Overwriting an existing publish</h3>
-        Since all publishes are made immediately available to all consumers, a
-        publish <b>cannot</b> be overwritten once it has been created. This is
-        to ensure consistency and reproducibility for any consumers of the
-        publish, such as downstream users or processes.
-        """ % (loader_url,)
-
-    @property
-    def settings_schema(self):
+        return desc + "<br><br>" + """
+        After publishing, if the file type is render(sequences) or image(sequences).
+        Plate entities will also be created for them, and published files will be linked to the plate entities.
         """
-        Dictionary defining the settings that this plugin expects to receive
-        through the settings parameter in the accept, validate, publish and
-        finalize methods.
-
-        A dictionary on the following form::
-
-            {
-                "Settings Name": {
-                    "type": "settings_type",
-                    "default_value": "default_value",
-                    "description": "One line description of the setting"
-            }
-
-        The type string should be one of the data types that toolkit accepts
-        as part of its environment configuration.
-        """
-        schema = super(PublishFilesPlugin, self).settings_schema
-        schema["Item Type Filters"]["default_value"] = ["file.*"]
-        schema["Item Type Settings"]["default_value"] = DEFAULT_ITEM_TYPE_SETTINGS
-        schema["Item Type Settings"]["values"]["items"] = {
-            "publish_type": {
-                "type": "shotgun_publish_type",
-                "description": "",
-            },
-            "publish_name_template": {
-                "type": "template",
-                "description": "",
-                "fields": ["context", "version", "[output]", "[name]", "*"],
-                "allows_empty": True,
-            },
-            "publish_path_template": {
-                "type": "template",
-                "description": "",
-                "fields": ["context", "*"],
-                "allows_empty": True,
-            },
-        }
-        return schema
-
-
-    def accept(self, task_settings, item):
-        """
-        Method called by the publisher to determine if an item is of any
-        interest to this plugin. Only items matching the filters defined via the
-        item_filters property will be presented to this method.
-
-        A publish task will be generated for each item accepted here. Returns a
-        dictionary with the following booleans:
-
-            - accepted: Indicates if the plugin is interested in this value at
-                all. Required.
-            - enabled: If True, the plugin will be enabled in the UI, otherwise
-                it will be disabled. Optional, True by default.
-            - visible: If True, the plugin will be visible in the UI, otherwise
-                it will be hidden. Optional, True by default.
-            - checked: If True, the plugin will be checked in the UI, otherwise
-                it will be unchecked. Optional, True by default.
-
-        :param item: Item to process
-
-        :returns: dictionary with boolean keys accepted, required and enabled
-        """
-
-        # Run the parent acceptance method
-        accept_data = super(PublishFilesPlugin, self).accept(task_settings, item)
-        if not accept_data.get("accepted"):
-            return accept_data
-
-        path = item.properties.get("path")
-        if not path:
-            msg = "'path' property is not set for item: %s" % item.name
-            accept_data["extra_info"] = {
-                "action_show_more_info": {
-                    "label": "Show Info",
-                    "tooltip": "Show more info",
-                    "text": msg
-                }
-            }
-            accept_data["accepted"] = False
-            return accept_data
-
-        # return the accepted data
-        return accept_data
 
 
     def validate(self, task_settings, item):
@@ -286,36 +54,7 @@ class PublishFilesPlugin(HookBaseClass):
         :returns: True if item is valid, False otherwise.
         """
 
-         # {'fields': {'DD': 25,
-         #  'MM': 1,
-         #  'SEQ': 'FORMAT: %d',
-         #  'Sequence': 'GDR',
-         #  'Shot': '050020',
-         #  'Step': 'light',
-         #  'YYYY': 2018,
-         #  'extension': 'exr',
-         #  'eye': '%V',
-         #  'height': 2376,
-         #  'name': 'light',
-         #  'output': 'beamsBty',
-         #  'version': 2,
-         #  'width': 4506},
-         # 'is_sequence': True,
-         # 'path': '/dd/shows/LEMONY/REF/CLIENT_VAULT/incoming/20180112/GDR_with_Enviro_CG_Rendered_Pt2/GDR_with_Enviro_CG_Rendered_Pt2/gdr050020_light_beams_bty_v02.fh10/gdr050020_light_beams_bty_v02.%04d.exr',
-         # 'publish_name': 'gdr050020_light_beams_bty.####.exr',
-         # 'publish_path': '/dd/shows/LEMONY/GDR/050020/SHARED/IMG/light/light/v002/4506x2376/GDR_050020_light_light-beamsBty.v002.%04d.exr',
-         # 'publish_type': 'Rendered Image',
-         # 'publish_version': 2,
-         # 'sequence_paths': ['/dd/shows/LEMONY/REF/CLIENT_VAULT/incoming/20180112/GDR_with_Enviro_CG_Rendered_Pt2/GDR_with_Enviro_CG_Rendered_Pt2/gdr050020_light_beams_bty_v02.fh10/gdr050020_light_beams_bty_v02.1017.exr'],
-         # 'work_path_template': 'shot_publish_render'}
-
-
         publisher = self.parent
-
-        # from dd.runtime import api
-        # api.load("ipython")
-        # from IPython import embed
-        # embed()
 
         # ---- ensure that work file(s) exist on disk to be published
 
@@ -418,15 +157,11 @@ class PublishFilesPlugin(HookBaseClass):
                 "action_show_more_info": {
                     "label": "Show Info",
                     "tooltip": "Show more info",
-                    "text": "Publish Path: %s" % (item.properties["publish_path"],)
+                    "text": "Publish Name: %s" % (item.properties["publish_name"],) + "\n" +
+                            "Publish Path: %s" % (item.properties["publish_path"],)
                 }
             }
         )
-
-        # from dd.runtime import api
-        # api.load("ipython")
-        # from IPython import embed
-        # embed()
 
         return True
 
@@ -458,6 +193,13 @@ class PublishFilesPlugin(HookBaseClass):
         if "sg_publish_path" in item.parent.properties:
             dependency_paths.append(item.parent.properties["sg_publish_path"])
 
+        # get any additional_publish_fields that have been defined
+        sg_fields = {}
+        additional_fields = task_settings.get("additional_publish_fields", {})
+        for template_key, sg_field in additional_fields.iteritems():
+            if template_key in item.properties["fields"]:
+                sg_fields[sg_field] = item.properties["fields"][template_key]
+
         # arguments for publish registration
         self.logger.info("Registering publish...")
         publish_data= {
@@ -469,7 +211,8 @@ class PublishFilesPlugin(HookBaseClass):
             "version_number": publish_version,
             "thumbnail_path": item.get_thumbnail_as_path() or "",
             "published_file_type": publish_type,
-            "dependency_paths": dependency_paths
+            "dependency_paths": dependency_paths,
+            "sg_fields": sg_fields
         }
 
         # log the publish data for debugging
@@ -488,203 +231,95 @@ class PublishFilesPlugin(HookBaseClass):
         # plugins to use.
         item.properties["sg_publish_data"] = sgtk.util.register_publish(
             **publish_data)
-        self.logger.info("Publish registered!")
+
+        if item.type.startswith("file.image") or item.type.startswith("file.render"):
+            # create a plate entity after the publish has went through successfully.
+            plate_entity = self._create_plate_entity(item)
+            self._link_published_files_to_plate_entity(plate_entity, item)
+            self.logger.info("Plate entity registered and Publish file is linked!")
+        else:
+            self.logger.info("Publish registered!")
 
 
-    def finalize(self, task_settings, item):
-        """
-        Execute the finalization pass. This pass executes once
-        all the publish tasks have completed, and can for example
-        be used to version up files.
+    @staticmethod
+    def _validate_plate_entity(item):
+        sg = get_sg_connection()
+        sg_filters = [
+            ['project', 'is', item.context.project],
+            ['code', 'is', item.properties["publish_name"]]
+        ]
+        if item.context.entity:
+            if item.context.entity["type"] == "Shot":
+                sg_filters.append(['shots', 'is', item.context.entity])
+            elif item.context.entity["type"] == "Sequence":
+                sg_filters.append(['sg_sequence', 'is', item.context.entity])
 
-        :param task_settings: Dictionary of Settings. The keys are strings, matching
-            the keys returned in the task_settings property. The values are `Setting`
-            instances.
-        :param item: Item to process
-        """
-
-        publisher = self.parent
-
-        # get the data for the publish that was just created in SG
-        publish_data = item.properties["sg_publish_data"]
-
-        # ensure conflicting publishes have their status cleared
-        publisher.util.clear_status_for_conflicting_publishes(
-            item.context, publish_data)
-
-        self.logger.info(
-            "Cleared the status of all previous, conflicting publishes")
-
-        path = item.properties["path"]
-        self.logger.info(
-            "Publish created for file: %s" % (path,),
-            extra={
-                "action_show_in_shotgun": {
-                    "label": "Show Publish",
-                    "tooltip": "Open the Publish in Shotgun.",
-                    "entity": publish_data
-                }
-            }
+        result = sg.find_one(
+            entity_type='Element',
+            filters=sg_filters,
+            fields=['shots', 'code', 'id']
         )
+        return result
 
+    def _create_plate_entity(self, item):
+        sg = get_sg_connection()
+        plate_entity = self._validate_plate_entity(item)
+        data = dict(
+            code=item.properties["publish_name"],
+            sg_client_name=item.name
+        )
+        if item.context.entity:
+            if item.context.entity["type"] == "Shot":
+                data["shots"] = [item.context.entity]
+                data["sg_shot"] = item.context.entity
+            elif item.context.entity["type"] == "Sequence":
+                data["sg_sequence"] = item.context.entity
 
-    ############################################################################
-    # protected methods
-
-    def _get_publish_type(self, item, task_settings):
-        """
-        Get a publish type for the supplied item.
-
-        :param item: The item to determine the publish type for
-
-        :return: A publish type or None if one could not be found.
-        """
-        publish_type = task_settings.get("publish_type")
-        if not publish_type:
-            raise TankError("publish_type not set for item: %s" % item.name)
-
-        return publish_type
-
-    def _resolve_env(self, item):
-        """Returns the env name that's resolved for the given item.
-        
-        :param item: item from publisher.
-        """
-
-        dd_fields = item.properties["fields"]
-
-        if "Shot" in dd_fields:
-            if dd_fields["Shot"]:
-                return 'shot'
-
-        if "Sequence" in dd_fields:
-            if dd_fields["Sequence"]:
-                return 'sequence'
-
-        return 'project'
-
-    def _get_publish_path(self, item, task_settings):
-        """
-        Get a publish path for the supplied item.
-
-        :param item: The item to determine the publish type for
-
-        :return: A string representing the output path to supply when
-            registering a publish for the supplied item
-
-        Extracts the publish path via the configured publish templates
-        if possible.
-        """
-
-        publisher = self.parent
-
-        # Start with the item's fields
-        fields = copy.copy(item.properties.get("fields", {}))
-
-        publish_path_template = task_settings.get("publish_path_template")
-        publish_path_template = publish_path_template.replace("{ENV}", self._resolve_env(item))
-        publish_path = None
-
-        # If a template is defined, get the publish path from it
-        if publish_path_template:
-
-            pub_tmpl = publisher.get_template_by_name(publish_path_template)
-            if not pub_tmpl:
-                # this template was not found in the template config!
-                raise TankError("The Template '%s' does not exist!" % publish_path_template)
-
-            # First get the fields from the context
-            try:
-                fields.update(item.context.as_template_fields(pub_tmpl))
-            except TankError, e:
-                self.logger.debug(
-                    "Unable to get context fields for publish_path_template.")
-
-            missing_keys = pub_tmpl.missing_keys(fields, True)
-            if missing_keys:
-                raise TankError(
-                    "Cannot resolve publish_path_template (%s). Missing keys: %s" %
-                            (publish_path_template, pprint.pformat(missing_keys))
-                )
-
-            # Apply fields to publish_path_template to get publish path
-            publish_path = pub_tmpl.apply_fields(fields)
-            self.logger.debug(
-                "Used publish_path_template to determine the publish path: %s" %
-                (publish_path,)
+        if plate_entity:
+            plate_entity = sg.update(
+                entity_type='Element',
+                entity_id=plate_entity['id'],
+                data=data,
+                multi_entity_update_modes=dict(shots='add'),
             )
-
-        # Otherwise fallback to publishing in place
+            self.logger.info(
+                "Updated Plate entity...",
+                extra={
+                    "action_show_more_info": {
+                        "label": "Plate Data",
+                        "tooltip": "Show the complete Plate data dictionary",
+                        "text": "<pre>%s</pre>" % (pprint.pformat(data),)
+                    }
+                }
+            )
         else:
-            publish_path = item.properties["path"]
-            self.logger.debug(
-                "No publish_path_template defined. Publishing in place.")
+            data["project"] = item.context.project
+            self.logger.info(
+                "Created Plate entity...",
+                extra={
+                    "action_show_more_info": {
+                        "label": "Plate Data",
+                        "tooltip": "Show the complete Plate data dictionary",
+                        "text": "<pre>%s</pre>" % (pprint.pformat(data),)
+                    }
+                }
+            )
+            plate_entity = sg.create(entity_type='Element', data=data)
 
-        return publish_path
+        return plate_entity
 
-
-    def _get_publish_version(self, item, task_settings):
+    @staticmethod
+    def _link_published_files_to_plate_entity(plate_entity, item):
         """
-        Get the publish version for the supplied item.
-
-        :param item: The item to determine the publish version for
-
-        Extracts the publish version from the item's "version" field
+        Create a plate entity for the corresponding publish and link the publish files
+        :param plate_entity:
+        :param item:
+        :return:
         """
-
-        # Get the publish version from the item's fields
-        return item.properties["fields"].get("version", 1)
-
-
-    def _get_publish_name(self, item, task_settings):
-        """
-        Get the publish name for the supplied item.
-
-        :param item: The item to determine the publish version for
-
-        Uses the path info hook to retrieve the publish name.
-        """
-
-        publisher = self.parent
-
-        # Start with the item's fields
-        fields = copy.copy(item.properties.get("fields", {}))
-
-        publish_name_template = task_settings.get("publish_name_template")
-        publish_name = None
-
-        # First check if we have a publish_name_template defined and attempt to
-        # get the publish name from that
-        if publish_name_template:
-
-            pub_tmpl = publisher.get_template_by_name(publish_name_template)
-            if not pub_tmpl:
-                # this template was not found in the template config!
-                raise TankError("The Template '%s' does not exist!" % publish_name_template)
-
-            # First get the fields from the context
-            try:
-                fields.update(item.context.as_template_fields(pub_tmpl))
-            except TankError, e:
-                self.logger.debug(
-                    "Unable to get context fields for publish_name_template.")
-
-            missing_keys = pub_tmpl.missing_keys(fields, True)
-            if missing_keys:
-                raise TankError(
-                    "Cannot resolve publish_name_template (%s). Missing keys: %s" %
-                            (publish_name_template, pprint.pformat(missing_keys))
-                )
-
-            publish_name = pub_tmpl.apply_fields(fields)
-            self.logger.debug(
-                "Retrieved publish_name via publish_name_template.")
-
-        # Otherwise fallback on file path parsing
-        else:
-            # Use built-in method for determining publish_name
-            publish_name = publisher.util.get_publish_name(item.properties["path"])
-            self.logger.debug(
-                "Retrieved publish_name via source file path.")
-
-        return publish_name
+        sg = get_sg_connection()
+        result = sg.update(
+            entity_type='Element',
+            entity_id=plate_entity['id'],
+            data=dict(sg_published_files=[item.properties["sg_publish_data"]]),
+        )
+        return result

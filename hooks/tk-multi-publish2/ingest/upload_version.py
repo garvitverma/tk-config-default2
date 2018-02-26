@@ -48,7 +48,7 @@ class UploadVersionPlugin(HookBaseClass):
         shotgun_url = publisher.sgtk.shotgun_url
 
         media_page_url = "%s/page/media_center" % (shotgun_url,)
-        review_url = "https://www.shotgunsoftware.com/features-review"
+        review_url = "https://www.shotgunsoftware.com/features/#review"
 
         return """
         Upload the file to Shotgun for review.<br><br>
@@ -180,9 +180,9 @@ class UploadVersionPlugin(HookBaseClass):
 
             self.logger.debug("Using path info hook to determine publish name.")
 
-            # get the publish name for this file path. this will ensure we get a
-            # consistent name across version publishes of this file.
-            publish_name = publisher.util.get_publish_name(path)
+            # use the path's filename as the publish name
+            path_components = publisher.util.get_file_path_components(path)
+            publish_name = path_components["filename"]
 
         self.logger.debug("Publish name: %s" % (publish_name,))
 
@@ -199,7 +199,7 @@ class UploadVersionPlugin(HookBaseClass):
             publish_data = item.properties["sg_publish_data"]
             version_data["published_files"] = [publish_data]
 
-        if self.settings["Link Local File"].value:
+        if task_settings["Link Local File"].value:
             version_data["sg_path_to_movie"] = path
 
         # log the version data for debugging
@@ -223,7 +223,7 @@ class UploadVersionPlugin(HookBaseClass):
 
         thumb = item.get_thumbnail_as_path()
 
-        if self.settings["Upload"].value:
+        if task_settings["Upload"].value:
             self.logger.info("Uploading content...")
 
             # on windows, ensure the path is utf-8 encoded to avoid issues with
