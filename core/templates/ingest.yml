@@ -80,33 +80,33 @@ paths:
 
 strings:
 
-    # strings for file names
-    ingest_shot_version_name:               '{ingestSequence}0{ingestShot}_{ingestStep}_{name}[-{output}]_v{ingestVersion}'
-    ingest_sequence_version_name:           '{ingestSequence}_{ingestStep}_{name}[-{output}]_v{ingestVersion}'
-    ingest_project_version_name:            '{ingestStep}_{name}[-{output}]_v{ingestVersion}'
+    # strings for input names
+    ingest_shot_input_name:               '{ingestSequence}0{ingestShot}_{ingestStep}_{name}[-{output}]_v{ingestVersion}'
+    ingest_sequence_input_name:           '{ingestSequence}_{ingestStep}_{name}[-{output}]_v{ingestVersion}'
+    ingest_project_input_name:            '{ingestStep}_{name}[-{output}]_v{ingestVersion}'
 
-    # strings for publish names
-    ingest_shot_publish_name:               '{Sequence}_{Shot}_{Step}_{name}[-{output}]'
-    ingest_sequence_publish_name:           '{Sequence}_{Step}_{name}[-{output}]'
-    ingest_project_publish_name:            '{Step}_{name}[-{output}]'
+    # strings for output names
+    ingest_shot_output_name:               '{Sequence}_{Shot}_{Step}_{name}[-{output}]'
+    ingest_sequence_output_name:           '{Sequence}_{Step}_{name}[-{output}]'
+    ingest_project_output_name:            '{Step}_{name}[-{output}]'
 
     # templates for parsing files
-    ingest_shot_render:                     '@ingest_shot_version_name.{SEQ}.{ingestImgExtension}'
-    ingest_sequence_render:                 '@ingest_sequence_version_name.{SEQ}.{ingestImgExtension}'
-    ingest_project_render:                  '@ingest_project_version_name.{SEQ}.{ingestImgExtension}'
+    ingest_shot_render:                     '@ingest_shot_input_name.{SEQ}.{ingestImgExtension}'
+    ingest_sequence_render:                 '@ingest_sequence_input_name.{SEQ}.{ingestImgExtension}'
+    ingest_project_render:                  '@ingest_project_input_name.{SEQ}.{ingestImgExtension}'
 
-    ingest_shot_script:                     '@ingest_shot_version_name.nk'
-    ingest_sequence_script:                 '@ingest_sequence_version_name.nk'
-    ingest_project_script:                  '@ingest_project_version_name.nk'
+    ingest_shot_script:                     '@ingest_shot_input_name.nk'
+    ingest_sequence_script:                 '@ingest_sequence_input_name.nk'
+    ingest_project_script:                  '@ingest_project_input_name.nk'
 
-    ingest_shot_scene:                      '@ingest_shot_version_name.{maya_extension}'
-    ingest_sequence_scene:                  '@ingest_sequence_version_name.{maya_extension}'
-    ingest_project_scene:                   '@ingest_project_version_name.{maya_extension}'
+    ingest_shot_scene:                      '@ingest_shot_input_name.{maya_extension}'
+    ingest_sequence_scene:                  '@ingest_sequence_input_name.{maya_extension}'
+    ingest_project_scene:                   '@ingest_project_input_name.{maya_extension}'
 
-    ingest_shot_cache:                      '@ingest_shot_version_name.{geo_extension}'
-    ingest_sequence_cache:                  '@ingest_sequence_version_name.{geo_extension}'
-    ingest_project_cache:                   '@ingest_project_version_name.{geo_extension}'
+    ingest_shot_cache:                      '@ingest_shot_input_name.{geo_extension}'
+    ingest_sequence_cache:                  '@ingest_sequence_input_name.{geo_extension}'
+    ingest_project_cache:                   '@ingest_project_input_name.{geo_extension}'
 
-    ingest_shot_movie:                      '@ingest_shot_version_name.mov'
-    ingest_sequence_movie:                  '@ingest_sequence_version_name.mov'
-    ingest_project_movie:                   '@ingest_project_version_name.mov'
+    ingest_shot_movie:                      '@ingest_shot_input_name.mov'
+    ingest_sequence_movie:                  '@ingest_sequence_input_name.mov'
+    ingest_project_movie:                   '@ingest_project_input_name.mov'
